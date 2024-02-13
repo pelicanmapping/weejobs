@@ -43,13 +43,15 @@ You can also spawn a job and get a "future result." In this case, the job's sign
 
 Use `join()` to block until a job completes:
 ```c++
-    auto job = [url](jobs::cancelable&) { return fetch_data_from_network(url); };
+    auto job = [url](jobs::cancelable&) {
+        return fetch_data_from_network(url);
+    };
     auto result = jobs::dispatch(job);
     ...
     auto value = result.join();
 ```
 
-You can dispatch a job to a specific job pool. A job pool is just a collection of dedicated threads with a priority queue. Use `jobs::get_pool` to get or create a job pool. You can use `set_concurrency` to allocate the number of threads the pool should use.
+You can dispatch a job to a specific job pool. A job pool is just a collection of dedicated threads with a priority queue. Use `jobs::get_pool` to get or create a job pool. You can use `set_concurrency` to allocate the number of threads the pool should use (the default is 2).
 ```c++
     auto my_pool = jobs::get_pool("My Job Pool");
     my_pool.set_concurrency(4);
@@ -57,9 +59,7 @@ You can dispatch a job to a specific job pool. A job pool is just a collection o
     auto job = []() { std::cout << "Hello, world!" << std::endl; };
 
     jobs::context context;
-    context.name = "My Job";
     context.pool = my_pool;
-    context.priority = []() { return 1.0f; };
 
     jobs::dispatch(job, context);
 ```
