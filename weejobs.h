@@ -6,15 +6,16 @@
  */
 #pragma once
 #include <atomic>
+#include <cfloat>
+#include <chrono>
+#include <condition_variable>
+#include <cstdlib>
+#include <functional>
+#include <list>
 #include <mutex>
 #include <thread>
-#include <condition_variable>
-#include <functional>
-#include <vector>
-#include <chrono>
 #include <type_traits>
-#include <cstdlib>
-#include <cfloat>
+#include <vector>
 
 // OPTIONAL: Define WEEJOBS_EXPORT if you want to use this library from multiple modules (DLLs)
 #ifndef WEEJOBS_EXPORT
@@ -537,34 +538,38 @@ namespace WEEJOBS_NAMESPACE
                         // (Benchmark: https://stackoverflow.com/a/20365638/4218920)
                         // Also note: it is indeed possible for the results of 
                         // priority() to change during the search. We don't care.
-                        int index = -1;
+                        //int index = -1;
+                        std::list<job>::iterator ptr = _queue.end();
                         float highest_priority = -FLT_MAX;
-                        for (unsigned i = 0; i < _queue.size(); ++i)
+                        for (auto iter = _queue.begin(); iter != _queue.end(); ++iter)
                         {
-                            float priority = _queue[i].ctx.priority != nullptr ?
-                                _queue[i].ctx.priority() :
+                            float priority = iter->ctx.priority != nullptr ?
+                                iter->ctx.priority() :
                                 0.0f;
 
-                            if (index < 0 || priority > highest_priority)
+                            if (ptr == _queue.end() || priority > highest_priority)
                             {
-                                index = i;
+                                ptr = iter;
                                 highest_priority = priority;
                             }
                         }
-                        if (index < 0)
-                            index = 0;
 
-                        next = std::move(_queue[index]);
+                        if (ptr == _queue.end())
+                            ptr = _queue.begin();
+
+                        next = std::move(*ptr); // _queue[index]);
                         have_next = true;
 
+                        _queue.erase(ptr);
+
                         // move the last element into the empty position:
-                        if (index < _queue.size() - 1)
-                        {
-                            _queue[index] = std::move(_queue.back());
-                        }
+                        //if (index < _queue.size() - 1)
+                        //{
+                        //    _queue[index] = std::move(_queue.back());
+                        //}
 
                         // and remove the last element.
-                        _queue.erase(_queue.end() - 1);
+                        //_queue.erase(_queue.end() - 1);
                     }
                 }
 
@@ -629,7 +634,8 @@ namespace WEEJOBS_NAMESPACE
         };
 
         std::string _name; // pool name
-        std::vector<job> _queue; // queued operations to run asynchronously
+        std::list<job> _queue;
+        //std::vector<job> _queue; // queued operations to run asynchronously
         mutable std::mutex _queueMutex; // protect access to the queue
         mutable std::mutex _quitMutex; // protects access to _done
         std::atomic<unsigned> _targetConcurrency; // target number of concurrent threads in the pool
