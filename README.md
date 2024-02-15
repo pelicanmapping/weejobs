@@ -89,9 +89,8 @@ Here's how to check for cancelation inside a job. If you dispatch a job, and the
 
 You can group jobs together. This lets you dispatch a number of jobs and then wait for all of them to finish before continuing:
 ```c++
-    jobs::jobgroup group;
     jobs::context context;
-    context.group = &group;
+    context.group = jobs::jobgroup::create();
     
     jobs::dispatch(task1, context);
     jobs::dispatch(task2, context);
