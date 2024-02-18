@@ -62,10 +62,10 @@ int main(int argc, char** argv)
         };
         
         jobs::dispatch(task, con)
-            .send_result_to(second_task, con)
-            .send_result_to(third_task, con)
-            .send_result_to<int>(fourth_task, con)
-            .send_result_to<int>(fifth_task, con);         
+            .then_dispatch(second_task, con)
+            .then_dispatch(third_task, con)
+            .then_dispatch<int>(fourth_task, con)
+            .then_dispatch<int>(fifth_task, con);
             
     }
 

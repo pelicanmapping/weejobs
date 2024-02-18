@@ -390,7 +390,7 @@ namespace WEEJOBS_NAMESPACE
         //! dispatched when the result becomes available and called with the return
         //! value of this future.
         template<typename FUNC, typename R = typename detail::result_of_t<FUNC(const T&, cancelable&)>>
-        inline future<R> send_result_to(FUNC func, const context& con = {});
+        inline future<R> then_dispatch(FUNC func, const context& con = {});
 
         //! Add a continuation to this future. Instead of the functor returning a value,
         //! it will instead have the option of resolving the incoming future/promise object.
@@ -398,7 +398,7 @@ namespace WEEJOBS_NAMESPACE
         //! Note: for some reason when you use this variant you must specific the template
         //! argument, e.g. result.then<int>(auto i, promise<int> p)
         template<typename R>
-        inline future<R> send_result_to(std::function<void(const T&, future<R>)> func, const context& con = {});
+        inline future<R> then_dispatch(std::function<void(const T&, future<R>)> func, const context& con = {});
 
         //! Add a continuation to this future. The functor only takes an input value, and it is
         //! expected that the application resolve the returned future on its own at some point
@@ -406,7 +406,7 @@ namespace WEEJOBS_NAMESPACE
         //! Note: for some reason when you use this variant you must specific the template
         //! argument, e.g. result.then<int>(auto i)
         template<typename R>
-        inline future<R> send_result_to(std::function<void(const T&)> func, const context& con = {});
+        inline future<R> then_dispatch(std::function<void(const T&)> func, const context& con = {});
 
     private:
         std::shared_ptr<shared_t> _shared;
@@ -939,7 +939,7 @@ namespace WEEJOBS_NAMESPACE
 
     template<typename T>
     template<typename FUNC, typename R>
-    inline future<R> future<T>::send_result_to(FUNC func, const context& con)
+    inline future<R> future<T>::then_dispatch(FUNC func, const context& con)
     {
         future<R> continuation_promise;
 
@@ -990,7 +990,7 @@ namespace WEEJOBS_NAMESPACE
 
     template<typename T>
     template<typename R>
-    inline future<R> future<T>::send_result_to(std::function<void(const T&, future<R>)> func, const context& con)
+    inline future<R> future<T>::then_dispatch(std::function<void(const T&, future<R>)> func, const context& con)
     {
         future<R> continuation_promise;
 
@@ -1030,7 +1030,7 @@ namespace WEEJOBS_NAMESPACE
 
     template<typename T>
     template<typename R>
-    inline future<R> future<T>::send_result_to(std::function<void(const T&)> func, const context& con)
+    inline future<R> future<T>::then_dispatch(std::function<void(const T&)> func, const context& con)
     {
         future<R> continuation_promise;
 
