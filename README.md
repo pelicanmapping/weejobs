@@ -42,6 +42,8 @@ You can also spawn a job and get a "future result." In this case, the job's sign
     else
        // still running.... come back later?
 ```
+Hold on to that `future` result! If there are no references to the future result, the system will try to cancel the job before it runs.
+Hint: `future` objects are fully assignable by value. There is no need to store pointers or them; they are internally reference-counted. As long as at least one copy of the `future` exists, the corresponding job will be allowed to run. 
 
 ### Waiting for a job to finish
 Use `join()` to block until a job completes:
