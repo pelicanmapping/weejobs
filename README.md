@@ -104,6 +104,7 @@ You can dispatch a job to a specific job pool. A job pool is just a collection o
 
     jobs::dispatch(job, context);
 ```
+The default job pool in unnamed, and you can access it with `jobs::get_pool()`.
 
 ### Prioritizing jobs
 Each job pool has a priority queue. You can use a lambda function in your `context` to specify the priority of a job. Since it uses a lambda function, the priorty can change between the time you dispatch the job and the time it gets pulled from the queue and executed:
