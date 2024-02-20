@@ -126,9 +126,9 @@ namespace WEEJOBS_NAMESPACE
             }
 
         protected:
-            std::mutex _m; // do not use Mutex, we never want tracking
-            std::condition_variable_any _cond;
             bool _set;
+            std::condition_variable_any _cond;
+            std::mutex _m; // do not use Mutex, we never want tracking
         };
 
 
@@ -386,9 +386,10 @@ namespace WEEJOBS_NAMESPACE
             return _shared.use_count();
         }
 
-        //! Add a continuation to this future. The continuation will be
-        //! dispatched when the result becomes available and called with the return
-        //! value of this future.
+        //! Add a continuation to this future. The continuation will be dispatched
+        //! when this object's result becomes available; that result will be the input
+        //! value to the continuation function. The continuation function in turn must
+        //! return a value (cannot be void).
         template<typename FUNC, typename R = typename detail::result_of_t<FUNC(const T&, cancelable&)>>
         inline future<R> then_dispatch(FUNC func, const context& con = {});
 
@@ -398,24 +399,26 @@ namespace WEEJOBS_NAMESPACE
         //! Note: for some reason when you use this variant you must specific the template
         //! argument, e.g. result.then<int>(auto i, promise<int> p)
         template<typename R>
-        inline future<R> then_dispatch(std::function<void(const T&, future<R>)> func, const context& con = {});
+        inline future<R> then_dispatch(std::function<void(const T&, future<R>&)> func, const context& con = {});
 
-        //! Add a continuation to this future. The functor only takes an input value, and it is
-        //! expected that the application resolve the returned future on its own at some point
-        //! This is useful for operations that have their own way of running asynchronous code.
-        //! Note: for some reason when you use this variant you must specific the template
-        //! argument, e.g. result.then<int>(auto i)
-        template<typename R>
-        inline future<R> then_dispatch(std::function<void(const T&)> func, const context& con = {});
+        //! Add a continuation to this future. The functor only takes an input value and has no
+        //! return value (fire and forget).
+        inline void then_dispatch(std::function<void(const T&)> func, const context& con = {});
 
     private:
         std::shared_ptr<shared_t> _shared;
 
         void fire_continuation()
         {
-            std::unique_lock<std::mutex> lock(_shared->_continuation_mutex);
+            std::lock_guard<std::mutex> lock(_shared->_continuation_mutex);
+
             if (_shared->_continuation && !_shared->_continuation_ran.exchange(true))
                 _shared->_continuation();
+
+            // Zero out the continuation function immediately after running it.
+            // This is important because the continuation might hold a reference to a promise
+            // that might hamper cancelation.
+            _shared->_continuation = nullptr;
         }
     };
 
@@ -742,9 +745,7 @@ namespace WEEJOBS_NAMESPACE
         struct runtime
         {
             inline runtime();
-
             inline ~runtime();
-
             inline void shutdown();
 
             bool _alive = true;
@@ -752,7 +753,7 @@ namespace WEEJOBS_NAMESPACE
             std::vector<std::string> _pool_names;
             std::vector<jobpool*> _pools;
             metrics _metrics;
-            std::function<void(const char*)> _setThreadName;
+            std::function<void(const char*)> _set_thread_name;
         };
     }
 
@@ -797,11 +798,11 @@ namespace WEEJOBS_NAMESPACE
     //! Dispatches a job and immediately returns a future result.
     //! @param task Function to run in a thread. Prototype is T(cancelable&)
     //! @param context Optional configuration for the asynchronous function call
-    //! @param promise Optional user-supplied promise object
     //! @return Future result of the async function call
     template<typename FUNC, typename T = typename detail::result_of_t<FUNC(cancelable&)>>
-    inline future<T> dispatch(FUNC task, const context& context = {}, future<T> promise = {})
+    inline future<T> dispatch(FUNC task, const context& context = {})
     {
+        future<T> promise;
         bool can_cancel = context.can_cancel;
 
         std::function<bool()> delegate = [task, promise, can_cancel]() mutable
@@ -826,6 +827,31 @@ namespace WEEJOBS_NAMESPACE
         return promise;
     }
 
+    //! Dispatches a job and immediately returns a future result.
+    //! @param task Function to run in a thread. Prototype is T(cancelable&)
+    //! @param promise Optional user-supplied promise object
+    //! @param context Optional configuration for the asynchronous function call
+    //! @return Future result of the async function call
+    template<typename FUNC, typename T = typename detail::result_of_t<FUNC(cancelable&)>>
+    inline future<T> dispatch(FUNC task, future<T> promise, const context& context = {})
+    {
+        bool can_cancel = context.can_cancel;
+
+        std::function<bool()> delegate = [task, promise, can_cancel]() mutable
+            {
+                bool run = !can_cancel || !promise.canceled();
+                if (run)
+                {
+                    task(promise);
+                }
+                return run;
+            };
+
+        detail::pool_dispatch(delegate, context);
+
+        return promise;
+    }
+
 
     inline void jobpool::start_threads()
     {
@@ -838,9 +864,9 @@ namespace WEEJOBS_NAMESPACE
 
             _threads.push_back(std::thread([this]
                 {
-                    if (instance()._setThreadName)
+                    if (instance()._set_thread_name)
                     {
-                        instance()._setThreadName(_name.c_str());
+                        instance()._set_thread_name(_name.c_str());
                     }
                     run();
                 }
@@ -909,7 +935,7 @@ namespace WEEJOBS_NAMESPACE
     //! when it spawns them.
     inline void set_thread_name_function(std::function<void(const char*)> f)
     {
-        instance()._setThreadName = f;
+        instance()._set_thread_name = f;
     }
 
     inline detail::runtime::runtime()
@@ -941,11 +967,13 @@ namespace WEEJOBS_NAMESPACE
     template<typename FUNC, typename R>
     inline future<R> future<T>::then_dispatch(FUNC func, const context& con)
     {
+        // The future result of FUNC. 
+        // In this case, the continuation task will return a value that the system will use to resolve the promise.
         future<R> continuation_promise;
 
         // lock the continuation and set it:
         {
-            std::unique_lock<std::mutex> lock(_shared->_continuation_mutex);
+            std::lock_guard<std::mutex> lock(_shared->_continuation_mutex);
 
             if (_shared->_continuation)
             {
@@ -968,13 +996,15 @@ namespace WEEJOBS_NAMESPACE
                         // copy it and dispatch it as the input to a new job:
                         T copy_of_value = shared->_obj;
 
-                        auto wrapper = [func, copy_of_value](cancelable& c) -> R
+                        // Once this wrapper gets created, note that we now have 2 refereces to the continuation_promise.
+                        // To prevent this from hampering cancelation, the continuation fuction is set to nullptr
+                        // immediately after being called.
+                        auto wrapper = [func, copy_of_value, continuation_promise]() mutable
                             {
-                                return func(copy_of_value, c);
+                                continuation_promise.resolve(func(copy_of_value, continuation_promise));
                             };
 
-                        // supply our own promise (the one returned to the user).
-                        jobs::dispatch(wrapper, copy_of_con, continuation_promise);
+                        jobs::dispatch(wrapper, copy_of_con);
                     }
                 };
         }
@@ -990,13 +1020,15 @@ namespace WEEJOBS_NAMESPACE
 
     template<typename T>
     template<typename R>
-    inline future<R> future<T>::then_dispatch(std::function<void(const T&, future<R>)> func, const context& con)
+    inline future<R> future<T>::then_dispatch(std::function<void(const T&, future<R>&)> func, const context& con)
     {
+        // The future we will return to the caller.
+        // Note, the user function "func" is responsible for resolving this promise.
         future<R> continuation_promise;
 
         // lock the continuation and set it:
         {
-            std::unique_lock<std::mutex> lock(_shared->_continuation_mutex);
+            std::lock_guard<std::mutex> lock(_shared->_continuation_mutex);
 
             if (_shared->_continuation)
             {
@@ -1007,9 +1039,10 @@ namespace WEEJOBS_NAMESPACE
             // have access to its result.
             std::weak_ptr<shared_t> weak_shared = _shared;
 
-            // fix the race condition here
-            // perhaps a set_on_resolve that mutexes to ensure on_resolve actually gets called?
-
+            // The user task is responsible for resolving the promise.
+            // This continuation executes the user function directly instead of dispatching it
+            // to the job pool. This is because we expect the user function to use some external
+            // asynchronous mechanism to resolve the promise.
             _shared->_continuation = [func, weak_shared, continuation_promise]() mutable
                 {
                     auto shared = weak_shared.lock();
@@ -1029,33 +1062,35 @@ namespace WEEJOBS_NAMESPACE
     }
 
     template<typename T>
-    template<typename R>
-    inline future<R> future<T>::then_dispatch(std::function<void(const T&)> func, const context& con)
+    inline void future<T>::then_dispatch(std::function<void(const T&)> func, const context& con)
     {
-        future<R> continuation_promise;
-
         // lock the continuation and set it:
         {
-            std::unique_lock<std::mutex> lock(_shared->_continuation_mutex);
+            std::lock_guard<std::mutex> lock(_shared->_continuation_mutex);
 
             if (_shared->_continuation)
             {
-                return {}; // only one continuation allowed
+                return; // only one continuation allowed
             }
 
             // take a weak ptr to this future's shared data. If this future goes away we'll still
             // have access to its result.
             std::weak_ptr<shared_t> weak_shared = _shared;
+            auto copy_of_con = con;
 
-            // fix the race condition here
-            // perhaps a set_on_resolve that mutexes to ensure on_resolve actually gets called?
-
-            _shared->_continuation = [func, weak_shared]() mutable
+            _shared->_continuation = [func, weak_shared, copy_of_con]() mutable
                 {
                     auto shared = weak_shared.lock();
                     if (shared)
                     {
-                        func(shared->_obj);
+                        auto copy_of_value = shared->_obj;
+                        auto fire_and_forget_delegate = [func, copy_of_value]() mutable
+                            {
+                                func(copy_of_value);
+                                return true;
+                            };
+
+                        detail::pool_dispatch(fire_and_forget_delegate, copy_of_con);
                     }
                 };
         }
@@ -1064,8 +1099,6 @@ namespace WEEJOBS_NAMESPACE
         {
             fire_continuation();
         }
-
-        return continuation_promise;
     }
 
     // Use this macro ONCE in your application in a .cpp file to 
