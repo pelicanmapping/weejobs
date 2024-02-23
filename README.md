@@ -1,6 +1,14 @@
 # weejobs
 Weejobs is a simple header-only C++11 API for scheduling asynchronous tasks. It consists of a single header file and has no dependencies aside from the STL.
 
+Features include:
+* Thread pools with configurable sizes
+* Futures & continuations
+* Work stealing
+* Job prioritization
+* Automatic cancelation
+* Header-only C++11
+
 ## Setup
 
 Use this macro somewhere in your app, in a source file (not a header).
@@ -106,6 +114,8 @@ You can dispatch a job to a specific job pool. A job pool is just a collection o
 ```
 The default job pool in unnamed, and you can access it with `jobs::get_pool()`.
 
+Note that a job *may* end up running in a different pool if the designated pool is too busy. See the section on *Work stealing* for more information.
+
 ### Prioritizing jobs
 Each job pool has a priority queue. You can use a lambda function in your `context` to specify the priority of a job. Since it uses a lambda function, the priorty can change between the time you dispatch the job and the time it gets pulled from the queue and executed:
 ```c++
@@ -116,13 +126,13 @@ Each job pool has a priority queue. You can use a lambda function in your `conte
 ```
 
 ### Automatic cancelation
-When you get a `future` from dispatching a job, that `future` is your ticket to getting an eventual return value. If you discard that `future` before the job actually starts executing, it will not run at all. This is called "auto-cancelation" and is the default behavior. You can disable this if you wish, forcing all dispatched jobs to run:
+When you get a `future` from dispatching a job, that `future` is your ticket to getting an eventual return value. If you discard that `future` before the job actually starts executing, the job may not run at all. This is called *automatic cancelation* and is the default behavior. You can disable this if you wish, forcing all dispatched jobs to run:
 ```c++
     jobs::context context;
     context.can_cancel = false;
 
     auto result = jobs::dispatch(job1, context);
-    // now job1 will still spawn even if result goes out of scope.
+    // now job1 will still spawn even if 'result' goes out of scope.
 ```
 
 ### Grouping jobs
@@ -139,8 +149,19 @@ You can group jobs together. This lets you dispatch a number of jobs and then wa
     group.join();
 ```
 
+### Work-stealing
+When you dispatch a job, you can ask it to run in a specific job pool. A job pool will always try to pull jobs from its own queue of pending tasks first. However, if a job pool has no pending jobs, it may *steal* jobs from other pools in order to better distribute the load. This is called *work-stealing* and is enabled by default.
+
+You can disable work-stealing entirely. This will force every job to run only in the thread pool that you designate:
+```c++
+    jobs::set_allow_work_stealing(false);
+```
+You can also disable work-stealing on a per-job-pool basis. For example, if you have a job pool that you want dedicated to a particular type of task, you can tell it never to steal work from other pools:
+```c++
+    auto pool = jobs::get_pool("my_dedicated_pool");
+    pool->set_can_steal_work(false);
+```
+
 ## License
-
 Weejobs is distributed under the MIT license.
-
 Weejobs is Copyright 2024+ Pelican Mapping.
