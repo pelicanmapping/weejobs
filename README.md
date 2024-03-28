@@ -114,7 +114,7 @@ You can dispatch a job to a specific job pool. A job pool is just a collection o
 ```
 The default job pool in unnamed, and you can access it with `jobs::get_pool()`.
 
-Note that a job *may* end up running in a different pool if the designated pool is too busy. See the section on *Work stealing* for more information.
+(Note: if *work-stealing* is enabled, a job *may* end up running in a different pool if the designated pool is too busy. See the section on *work-stealing* for more information.)
 
 ### Prioritizing jobs
 Each job pool has a priority queue. You can use a lambda function in your `context` to specify the priority of a job. Since it uses a lambda function, the priorty can change between the time you dispatch the job and the time it gets pulled from the queue and executed:
@@ -150,13 +150,13 @@ You can group jobs together. This lets you dispatch a number of jobs and then wa
 ```
 
 ### Work-stealing
-When you dispatch a job, you can ask it to run in a specific job pool. A job pool will always try to pull jobs from its own queue of pending tasks first. However, if a job pool has no pending jobs, it may *steal* jobs from other pools in order to better distribute the load. This is called *work-stealing* and is enabled by default.
+When you dispatch a job, you can ask it to run in a specific job pool. A job pool will always try to pull jobs from its own queue of pending tasks. When a job pool has no pending jobs its threads will sit idle. However, if you enable *work-stealing*, a job pool may *steal* jobs from other pools in order to better distribute the load.
 
-You can disable work-stealing entirely. This will force every job to run only in the thread pool that you designate:
+You can enable work-stealing by calling this method:
 ```c++
     jobs::set_allow_work_stealing(false);
 ```
-You can also disable work-stealing on a per-job-pool basis. For example, if you have a job pool that you want dedicated to a particular type of task, you can tell it never to steal work from other pools:
+You can also disable work-stealing for individual job pools. For example, if you have a job pool that you want dedicated to a particular type of task, you can tell it never to steal work from other pools:
 ```c++
     auto pool = jobs::get_pool("my_dedicated_pool");
     pool->set_can_steal_work(false);
