@@ -154,7 +154,7 @@ When you dispatch a job, you can ask it to run in a specific job pool. A job poo
 
 You can enable work-stealing by calling this method:
 ```c++
-    jobs::set_allow_work_stealing(false);
+    jobs::set_allow_work_stealing(true);
 ```
 You can also disable work-stealing for individual job pools. For example, if you have a job pool that you want dedicated to a particular type of task, you can tell it never to steal work from other pools:
 ```c++
