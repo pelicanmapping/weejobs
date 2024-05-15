@@ -33,6 +33,10 @@ int main(int argc, char** argv)
         };
     auto future_result = jobs::dispatch(get_future_result);
 
+    // This should generate a WARNING in C++17 and above because of the
+    // [[nodiscard]] attribute.
+    jobs::dispatch([](jobs::cancelable&) { return 42; });
+
     // Join
     auto result = future_result.join();
     atomic_print("Future result = " + std::to_string(result));
