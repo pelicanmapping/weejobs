@@ -35,7 +35,11 @@ int main(int argc, char** argv)
 
     // This should generate a WARNING in C++17 and above because of the
     // [[nodiscard]] attribute.
-    jobs::dispatch([](jobs::cancelable&) { return 42; });
+    jobs::dispatch([](jobs::cancelable&)
+        {
+            atomic_print("Job will not run because future was discarded.");
+            return 42;
+        });
 
     // Join
     auto result = future_result.join();
