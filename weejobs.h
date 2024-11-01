@@ -19,7 +19,7 @@
 #include <string>
 #include <algorithm>
 
- // OPTIONAL: Define WEEJOBS_EXPORT if you want to use this library from multiple modules (DLLs)
+// OPTIONAL: Define WEEJOBS_EXPORT if you want to use this library from multiple modules (DLLs)
 #ifndef WEEJOBS_EXPORT
 #define WEEJOBS_EXPORT
 #endif
@@ -32,14 +32,14 @@
 // Version
 #define WEEJOBS_VERSION_MAJOR 1
 #define WEEJOBS_VERSION_MINOR 0
-#define WEEJOBS_VERSION_REV   1
+#define WEEJOBS_VERSION_REV   2
 #define WEEJOBS_STR_NX(s) #s
 #define WEEJOBS_STR(s) WEEJOBS_STR_NX(s)
 #define WEEJOBS_COMPUTE_VERSION(major, minor, patch) ((major) * 10000 + (minor) * 100 + (patch))
 #define WEEJOBS_VERSION_NUMBER WEEJOBS_COMPUTE_VERSION(WEEJOBS_VERSION_MAJOR, WEEJOBS_VERSION_MINOR, WEEJOBS_VERSION_REV)
 #define WEEJOBS_VERSION_STRING WEEJOBS_STR(WEEJOBS_VERSION_MAJOR) "." WEEJOBS_STR(WEEJOBS_VERSION_MINOR) "." WEEJOBS_STR(WEEJOBS_VERSION_REV)
 
-#if __cplusplus >= 201703L || _MSVC_LANG >= 201703L
+#if __cplusplus >= 201703L
 #define WEEJOBS_NO_DISCARD [[nodiscard]]
 #else
 #define WEEJOBS_NO_DISCARD
@@ -121,6 +121,14 @@ namespace WEEJOBS_NAMESPACE
                 return true;
             }
 
+            //! Set if true, reset if false.
+            inline void operator = (bool value) {
+                if (value)
+                    set();
+                else
+                    reset();
+            }
+
             //! Set the event state, causing any waiters to unblock.
             inline void set() {
                 if (!_set) {
@@ -141,6 +149,11 @@ namespace WEEJOBS_NAMESPACE
             //! Whether the event state is set (waiters will not block).
             inline bool isSet() const {
                 return _set;
+            }
+
+            //! Synonymous with isSet()
+            inline operator bool() const {
+                return isSet();
             }
 
         protected:
@@ -723,7 +736,10 @@ namespace WEEJOBS_NAMESPACE
 
     //! Returns the job pool with the given name, creating a new one if it doesn't 
     //! already exist. If you don't specify a name, a default pool is used.
-    inline jobpool* get_pool(const std::string& name = {})
+    //! @param name Name of the pool to fetch (or create)
+    //! @param pool_size Number of threads in the pool (if it's a new pool)
+    //! @return Pointer to the job pool
+    inline jobpool* get_pool(const std::string& name = {}, unsigned pool_size = 2u)
     {
         std::lock_guard<std::mutex> lock(instance()._pools_mutex);
 
@@ -732,7 +748,7 @@ namespace WEEJOBS_NAMESPACE
             if (pool->name() == name)
                 return pool;
         }
-        auto new_pool = new jobpool(name, 2u);
+        auto new_pool = new jobpool(name, pool_size);
         instance()._pools.push_back(new_pool);
         instance()._metrics._pools.push_back(&new_pool->_metrics);
         new_pool->start_threads();
