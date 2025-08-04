@@ -1,5 +1,5 @@
 # weejobs
-Weejobs is a simple header-only C++11 API for scheduling asynchronous tasks. It consists of a single header file and has no dependencies aside from the STL.
+Weejobs is a simple header-only C++17 API for scheduling asynchronous tasks. It consists of a single header file and has no dependencies aside from the STL.
 
 Features include:
 * Thread pools with configurable sizes
@@ -7,7 +7,7 @@ Features include:
 * Work stealing
 * Job prioritization
 * Automatic cancelation
-* Header-only C++11
+* Header-only C++17
 
 ## Setup
 
